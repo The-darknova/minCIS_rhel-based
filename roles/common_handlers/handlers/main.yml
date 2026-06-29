@@ -1,0 +1,27 @@
+---
+# Role: common_handlers
+- name: Restart sshd
+  ansible.builtin.systemd:
+    name: sshd
+    state: restarted
+
+- name: Restart auditd
+  ansible.builtin.systemd:
+    name: auditd
+    state: restarted
+
+- name: Reload firewalld
+  ansible.builtin.systemd:
+    name: firewalld
+    state: reloaded
+
+- name: Restart systemd-journald
+  ansible.builtin.systemd:
+    name: systemd-journald
+    state: restarted
+
+- name: Reload sysctl
+  ansible.builtin.command: sysctl --system
+
+- name: Reboot system
+  ansible.builtin.reboot:

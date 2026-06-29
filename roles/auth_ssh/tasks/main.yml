@@ -1,0 +1,216 @@
+---
+# Role: auth_ssh
+
+- name: Secure SSH Daemon
+  when: hardening_ssh | bool
+  block:
+    - name: Ensure sshd_config.d directory exists
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Deploy SSH hardening configuration
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/06-ssh-hardening.conf
+        content: |
+          Banner /etc/issue.net
+          PermitRootLogin no
+          PasswordAuthentication yes
+          PermitEmptyPasswords no
+          MaxAuthTries 4
+          ClientAliveInterval 30
+          ClientAliveCountMax 3
+          LoginGraceTime 60
+          X11Forwarding no
+          AllowTcpForwarding no
+          IgnoreRhosts yes
+          HostbasedAuthentication no
+          UsePAM yes
+          PermitUserEnvironment no
+          DisableForwarding yes
+          MaxStartups 10:30:60
+          LogLevel VERBOSE
+          Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+          MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+          KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group14-sha256,diffie-hellman-group16-sha512
+        mode: '0600'
+        owner: root
+        group: root
+      notify: Restart sshd
+
+    - name: Secure /etc/ssh/sshd_config permissions
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config
+        owner: root
+        group: root
+        mode: 'u-x,og-rwx'
+
+    - name: Secure files in /etc/ssh/sshd_config.d
+      ansible.builtin.command: find /etc/ssh/sshd_config.d -type f -exec chmod u-x,og-rwx {} +
+      changed_when: false
+
+    - name: Ensure correct ownership in /etc/ssh/sshd_config.d
+      ansible.builtin.command: find /etc/ssh/sshd_config.d -type f -exec chown root:root {} +
+      changed_when: false
+
+- name: Sudo Hardening
+  when: hardening_sudo | bool
+  block:
+    - name: Enable sudo logs
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/00-cis-hardening
+        content: |
+          Defaults use_pty
+          Defaults logfile="/var/log/sudo.log"
+        mode: '0440'
+        owner: root
+        group: root
+
+- name: PAM Authentication Policies (Authselect)
+  when: hardening_pam_authselect | bool
+  block:
+    - name: Apply authselect configuration (sssd with faillock and pwhistory)
+      ansible.builtin.command: authselect select sssd with-faillock with-pwhistory --force
+      register: authselect_result
+      changed_when: "'Profile \"sssd\" was selected.' in authselect_result.stdout"
+
+    - name: Ensure faillock conf.d directory exists
+      ansible.builtin.file:
+        path: /etc/security/faillock.conf.d
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Configure pam_faillock
+      ansible.builtin.copy:
+        dest: /etc/security/faillock.conf.d/60-hardening-faillock.conf
+        content: |
+          # Configuration du verrouillage des comptes (pam_faillock)
+          deny = 3
+          unlock_time = 900
+          even_deny_root
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Ensure pwquality conf.d directory exists
+      ansible.builtin.file:
+        path: /etc/security/pwquality.conf.d
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Configure pam_pwquality (Password Complexity)
+      ansible.builtin.copy:
+        dest: /etc/security/pwquality.conf.d/60-hardening-pw.conf
+        content: |
+          difok = 2
+          minlen = 14
+          minclass = 3
+          dcredit = -1
+          ucredit = -1
+          ocredit = -1
+          lcredit = -1
+          maxrepeat = 3
+          maxsequence = 3
+          dictcheck = 1
+          enforce_for_root = yes
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Configure pam_pwhistory (Password History)
+      ansible.builtin.copy:
+        dest: /etc/security/pwhistory.conf
+        content: |
+          # Configuration de l'historique (pam_pwhistory)
+          remember = 24
+          enforce_for_root = yes
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Remove nullok from PAM common-auth and common-password (if they exist)
+      ansible.builtin.replace:
+        path: "{{ item }}"
+        regexp: '\s*nullok\s*'
+        replace: ' '
+      loop:
+        - /etc/pam.d/system-auth
+        - /etc/pam.d/password-auth
+      failed_when: false
+
+    - name: Configure Password Expiration in login.defs
+      ansible.builtin.lineinfile:
+        path: /etc/login.defs
+        regexp: "^{{ item.key }}\\s"
+        line: "{{ item.key }}\t{{ item.value }}"
+        state: present
+      loop:
+        - { key: 'PASS_MAX_DAYS', value: '90' }
+        - { key: 'PASS_MIN_DAYS', value: '1' }
+        - { key: 'PASS_WARN_AGE', value: '7' }
+        - { key: 'ENCRYPT_METHOD', value: 'SHA512' }
+
+- name: Securing Authentication Files
+  when: hardening_auth_files | bool
+  block:
+    - name: Secure permissions on shadow and gshadow files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: root
+        group: shadow
+        mode: '0640'
+      loop:
+        - /etc/shadow
+        - /etc/shadow-
+        - /etc/gshadow
+        - /etc/gshadow-
+      failed_when: false
+
+    - name: Secure permissions on /etc/shells
+      ansible.builtin.file:
+        path: /etc/shells
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Create and secure /etc/security/opasswd
+      ansible.builtin.file:
+        path: /etc/security/opasswd
+        state: touch
+        owner: root
+        group: root
+        mode: '0600'
+        modification_time: preserve
+        access_time: preserve
+
+- name: Security for User Profiles (TMOUT & umask)
+  when: hardening_user_profiles | bool
+  block:
+    - name: Configure TMOUT and umask for standard shells
+      ansible.builtin.copy:
+        dest: /etc/profile.d/99-hardening.sh
+        content: |
+          readonly TMOUT=900
+          export TMOUT
+          umask 027
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Configure TMOUT and umask for csh/tcsh
+      ansible.builtin.copy:
+        dest: /etc/profile.d/99-hardening.csh
+        content: |
+          set autologout=15
+          set -r autologout
+          umask 027
+        mode: '0644'
+        owner: root
+        group: root

@@ -1,0 +1,16 @@
+---
+- name: RHEL-based Linux System Hardening
+  hosts: test_nodes
+  become: true
+  vars_files:
+    - group_vars/all.yml
+  roles:
+    - common_handlers
+    - filesystem
+    - package_mgmt
+    - time_sync
+    - access_control
+    - kernel_boot
+    - crypto_policies
+    - network_firewall
+    - auth_ssh

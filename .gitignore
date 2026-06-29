@@ -1,0 +1,16 @@
+# Ansible
+*.retry
+.vault_pass
+group_vars/all_secrets.yml
+*secrets*.yml
+*secret*.yml
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Logs
+*.log

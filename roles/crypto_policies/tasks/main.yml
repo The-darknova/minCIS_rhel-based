@@ -1,0 +1,15 @@
+---
+# Role: crypto_policies
+
+- name: Apply System-wide Crypto Policies
+  when: hardening_crypto_policies | bool
+  block:
+    - name: Check current crypto policy
+      ansible.builtin.command: update-crypto-policies --show
+      register: current_crypto_policy
+      changed_when: false
+
+    - name: Set crypto policy to DEFAULT:NO-SHA1:NO-SSHCBC
+      ansible.builtin.command: update-crypto-policies --set DEFAULT:NO-SHA1:NO-SSHCBC
+      when: current_crypto_policy.stdout.strip() != "DEFAULT:NO-SHA1:NO-SSHCBC"
+      notify: Reboot system

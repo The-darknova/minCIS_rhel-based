@@ -1,0 +1,44 @@
+---
+# RHEL Hardening Control Variables
+# Set these to false if you want to bypass a specific hardening block
+
+# Phase 1: Filesystem
+hardening_fs_blacklist: true
+hardening_fs_mounts: true
+
+# Phase 2 & 7: Package Management & Services
+hardening_dnf_secure: true
+hardening_purge_gui: true
+hardening_purge_services: true
+hardening_mta_secure: true
+hardening_cron_secure: true
+hardening_cron_allow: true
+
+# Phase 2.5: Time Sync
+hardening_time_sync: true
+
+# Phase 3 & 6: Access Control (SELinux & Banners)
+hardening_selinux: true
+hardening_legal_banners: true
+
+# Phase 4 & 5: Bootloader & Kernel
+hardening_bootloader_perms: true
+hardening_sysctl: true
+hardening_coredump: true
+hardening_auditd: true
+hardening_journald: true
+
+# Phase 8: Crypto Policies
+hardening_crypto_policies: true
+
+# Phase 9: Network & Firewall
+hardening_network_modules: true
+hardening_network_sysctl: true
+hardening_firewalld: true
+
+# Phase 10: Auth & SSH
+hardening_ssh: true
+hardening_sudo: true
+hardening_pam_authselect: true
+hardening_auth_files: true
+hardening_user_profiles: true

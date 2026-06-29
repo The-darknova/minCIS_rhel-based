@@ -1,0 +1,189 @@
+---
+# Role: kernel_boot
+
+- name: Secure Bootloader Files
+  when: hardening_bootloader_perms | bool
+  block:
+    - name: Set permissions on GRUB files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "/boot/grub2/user.cfg", mode: "0600" }
+        - { path: "/boot/grub2/grub.cfg", mode: "0600" }
+      failed_when: false
+
+- name: Kernel and Process Hardening
+  when: hardening_sysctl | bool
+  block:
+    - name: Configure sysctl process hardening
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/60-process-hardening.conf
+        content: |
+          kernel.randomize_va_space = 2
+          kernel.yama.ptrace_scope = 1
+          fs.suid_dumpable = 0
+          kernel.dmesg_restrict = 1
+          kernel.kptr_restrict = 2
+          fs.protected_hardlinks = 1
+          fs.protected_symlinks = 1
+        mode: '0644'
+        owner: root
+        group: root
+      notify: Reload sysctl
+
+- name: Restrict Core Dumps
+  when: hardening_coredump | bool
+  block:
+    - name: Ensure coredump conf directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/coredump.conf.d
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Disable Core Dumps
+      ansible.builtin.copy:
+        dest: /etc/systemd/coredump.conf.d/60-coredump.conf
+        content: |
+          [Coredump]
+          Storage=none
+          ProcessSizeMax=0
+        mode: '0644'
+        owner: root
+        group: root
+
+- name: Auditd Configuration
+  when: hardening_auditd | bool
+  block:
+    - name: Install auditd and audispd-plugins
+      ansible.builtin.dnf:
+        name:
+          - audit
+          - audispd-plugins
+        state: present
+
+    - name: Ensure auditd service is enabled
+      ansible.builtin.systemd:
+        name: auditd
+        enabled: yes
+
+    - name: Get grubby kernel info
+      ansible.builtin.command: grubby --info=ALL
+      register: grubby_info
+      changed_when: false
+
+    - name: Remove selinux=0 or enforcing=0 from grub
+      ansible.builtin.command: grubby --update-kernel ALL --remove-args "selinux=0 enforcing=0"
+      when: "'selinux=0' in grubby_info.stdout or 'enforcing=0' in grubby_info.stdout"
+
+    - name: Add audit=1 to grub
+      ansible.builtin.command: grubby --update-kernel ALL --args 'audit=1'
+      when: "'audit=1' not in grubby_info.stdout"
+
+    - name: Deploy CIS auditd rules
+      ansible.builtin.copy:
+        dest: /etc/audit/rules.d/60-cis-auditd.rules
+        content: |
+          ## =========================================================
+          ## CIS RHEL Benchmark - Auditd Rules
+          ## =========================================================
+          -D
+          -b 8192
+          -f 1
+          -a always,exit -F arch=b64 -S adjtimex,settimeofday,clock_settime -k time-change
+          -a always,exit -F arch=b32 -S adjtimex,settimeofday,clock_settime -k time-change
+          -w /etc/localtime -p wa -k time-change
+          -a always,exit -F arch=b64 -S sethostname,setdomainname -k system-locale
+          -a always,exit -F arch=b32 -S sethostname,setdomainname -k system-locale
+          -w /etc/issue -p wa -k system-locale
+          -w /etc/issue.net -p wa -k system-locale
+          -w /etc/hosts -p wa -k system-locale
+          -w /etc/network -p wa -k system-locale
+          -w /etc/networks -p wa -k system-locale
+          -w /etc/apparmor/ -p wa -k MAC-policy
+          -w /etc/apparmor.d/ -p wa -k MAC-policy
+          -a always,exit -F arch=b64 -S execve -C uid!=euid -F euid=0 -k user_emulation
+          -a always,exit -F arch=b32 -S execve -C uid!=euid -F euid=0 -k user_emulation
+          -w /var/log/lastlog -p wa -k logins
+          -w /var/log/faillog -p wa -k logins
+          -w /var/log/tallylog -p wa -k logins
+          -w /var/run/utmp -p wa -k session
+          -w /var/log/wtmp -p wa -k session
+          -w /var/log/btmp -p wa -k session
+          -w /etc/group -p wa -k identity
+          -w /etc/passwd -p wa -k identity
+          -w /etc/gshadow -p wa -k identity
+          -w /etc/shadow -p wa -k identity
+          -w /etc/security/opasswd -p wa -k identity
+          -w /etc/sudoers -p wa -k scope
+          -w /etc/sudoers.d/ -p wa -k scope
+          -w /var/log/sudo.log -p wa -k actions
+          -a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=unset -k perm_mod
+          -a always,exit -F arch=b32 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=unset -k perm_mod
+          -a always,exit -F arch=b64 -S chown,fchown,fchownat,lchown -F auid>=1000 -F auid!=unset -k perm_mod
+          -a always,exit -F arch=b32 -S chown,fchown,fchownat,lchown -F auid>=1000 -F auid!=unset -k perm_mod
+          -a always,exit -F arch=b64 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=unset -k perm_mod
+          -a always,exit -F arch=b32 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=unset -k perm_mod
+          -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+          -a always,exit -F arch=b32 -S creat,open,openat,truncate,ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+          -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -k access
+          -a always,exit -F arch=b32 -S creat,open,openat,truncate,ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -k access
+          -a always,exit -F arch=b64 -S mount -F auid>=1000 -F auid!=unset -k mounts
+          -a always,exit -F arch=b32 -S mount -F auid>=1000 -F auid!=unset -k mounts
+          -a always,exit -F arch=b64 -S unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=unset -k delete
+          -a always,exit -F arch=b32 -S unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=unset -k delete
+          -w /sbin/insmod -p x -k modules
+          -w /sbin/rmmod -p x -k modules
+          -w /sbin/modprobe -p x -k modules
+          -a always,exit -F arch=b64 -S init_module,delete_module -k modules
+          -a always,exit -F arch=b32 -S init_module,delete_module -k modules
+          -e 2
+        mode: '0640'
+        owner: root
+        group: root
+      notify: Restart auditd
+
+    - name: Load auditd rules
+      ansible.builtin.command: augenrules --load
+      changed_when: false
+      failed_when: false
+
+    - name: Configure auditd daemon options
+      ansible.builtin.lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: "^{{ item.key }}.*"
+        line: "{{ item.key }} = {{ item.value }}"
+      loop:
+        - { key: "max_log_file_action", value: "keep_logs" }
+        - { key: "space_left_action", value: "email" }
+        - { key: "action_mail_acct", value: "root" }
+        - { key: "admin_space_left_action", value: "halt" }
+      notify: Restart auditd
+
+- name: Configure Journald
+  when: hardening_journald | bool
+  block:
+    - name: Ensure journald conf.d directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/journald.conf.d
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+        
+    - name: Deploy Journald config
+      ansible.builtin.copy:
+        dest: /etc/systemd/journald.conf.d/60-cis-journald.conf
+        content: |
+          [Journal]
+          Compress=yes
+          Storage=persistent
+          ForwardToSyslog=no
+        mode: '0644'
+        owner: root
+        group: root
+      notify: Restart systemd-journald

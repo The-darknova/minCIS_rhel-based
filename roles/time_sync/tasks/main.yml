@@ -1,0 +1,33 @@
+---
+# Role: time_sync
+
+- name: Time Synchronization (Chrony)
+  when: hardening_time_sync | bool
+  block:
+    - name: Install chrony
+      ansible.builtin.dnf:
+        name: chrony
+        state: present
+
+    - name: Configure chrony
+      ansible.builtin.copy:
+        dest: /etc/chrony.conf
+        content: |
+          pool 2.pool.ntp.org iburst
+          keyfile /etc/chrony.keys
+          driftfile /var/lib/chrony/drift
+          log tracking measurements statistics
+          logdir /var/log/chrony
+          maxupdateskew 100.0
+          rtcsync
+          makestep 1 3
+        mode: '0644'
+        owner: root
+        group: root
+      notify: Restart chronyd
+
+    - name: Ensure chronyd is enabled and started
+      ansible.builtin.systemd:
+        name: chronyd
+        enabled: true
+        state: started

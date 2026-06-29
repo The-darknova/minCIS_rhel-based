@@ -1,0 +1,119 @@
+---
+# Role: network_firewall
+
+- name: Network Modules Blacklisting
+  when: hardening_network_modules | bool
+  block:
+    - name: Create network module blacklist configuration
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/hardening-networking.conf
+        content: |
+          install dccp /bin/false
+          blacklist dccp
+          install tipc /bin/false
+          blacklist tipc
+          install rds /bin/false
+          blacklist rds
+          install sctp /bin/false
+          blacklist sctp
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Unload blacklisted network modules if currently loaded
+      ansible.builtin.command:
+        cmd: "modprobe -r {{ item }}"
+      loop:
+        - dccp
+        - tipc
+        - rds
+        - sctp
+      register: unload_net_result
+      failed_when: false
+      changed_when: unload_net_result.rc == 0
+
+- name: TCP/IP Hardening via Sysctl
+  when: hardening_network_sysctl | bool
+  block:
+    - name: Configure network sysctl parameters
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/60-network-hardening.conf
+        content: |
+          net.ipv4.ip_forward = 0
+          net.ipv6.conf.all.forwarding = 0
+          net.ipv6.conf.default.forwarding = 0
+          net.ipv4.conf.all.accept_redirects = 0
+          net.ipv4.conf.default.accept_redirects = 0
+          net.ipv4.conf.all.secure_redirects = 0
+          net.ipv4.conf.default.secure_redirects = 0
+          net.ipv4.conf.all.send_redirects = 0
+          net.ipv4.conf.default.send_redirects = 0
+          net.ipv6.conf.all.accept_redirects = 0
+          net.ipv6.conf.default.accept_redirects = 0
+          net.ipv4.conf.all.rp_filter = 1
+          net.ipv4.conf.default.rp_filter = 1
+          net.ipv4.conf.all.log_martians = 1
+          net.ipv4.conf.default.log_martians = 1
+          net.ipv4.tcp_syncookies = 1
+          net.ipv4.icmp_echo_ignore_broadcasts = 1
+          net.ipv4.icmp_ignore_bogus_error_responses = 1
+          net.ipv6.conf.all.accept_ra = 0
+          net.ipv6.conf.default.accept_ra = 0
+          net.ipv4.conf.all.accept_source_route = 0
+          net.ipv4.conf.default.accept_source_route = 0
+          net.ipv6.conf.all.accept_source_route = 0
+          net.ipv6.conf.default.accept_source_route = 0
+        mode: '0644'
+        owner: root
+        group: root
+      notify: Reload sysctl
+
+- name: Firewalld Configuration
+  when: hardening_firewalld | bool
+  block:
+    - name: Ensure firewalld is installed
+      ansible.builtin.dnf:
+        name: firewalld
+        state: present
+
+    - name: Ensure firewalld service is enabled and started
+      ansible.builtin.systemd:
+        name: firewalld
+        enabled: yes
+        state: started
+
+    - name: Set default policies to DROP
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - firewall-cmd --permanent --zone=public --set-target=DROP
+        - firewall-cmd --permanent --policy=default-policy-outbound --set-target=DROP
+        - firewall-cmd --permanent --policy=default-policy-routed --set-target=DROP
+      register: fw_policy_result
+      changed_when: "'success' in fw_policy_result.stdout"
+
+    - name: Deny external traffic pretending to be from loopback
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - firewall-cmd --permanent --zone=drop --add-source=127.0.0.0/8
+        - firewall-cmd --permanent --zone=drop --add-source=::1
+      register: fw_loopback_result
+      changed_when: "'success' in fw_loopback_result.stdout and 'ALREADY_ENABLED' not in fw_loopback_result.stderr"
+      failed_when: false
+
+    - name: Allow incoming SSH (TCP 22)
+      ansible.builtin.command: firewall-cmd --permanent --zone=public --add-port=22/tcp
+      register: fw_ssh_result
+      changed_when: "'success' in fw_ssh_result.stdout and 'ALREADY_ENABLED' not in fw_ssh_result.stderr"
+      failed_when: false
+
+    - name: Allow outgoing HTTP, HTTPS, and DNS
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="80" protocol="tcp" accept'
+        - firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="443" protocol="tcp" accept'
+        - firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="53" protocol="tcp" accept'
+        - firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="53" protocol="udp" accept'
+      register: fw_rich_rules_result
+      changed_when: "'success' in fw_rich_rules_result.stdout and 'ALREADY_ENABLED' not in fw_rich_rules_result.stderr"
+      failed_when: false
+      notify: Reload firewalld

@@ -1,0 +1,129 @@
+---
+# Role: filesystem
+
+- name: Filesystem Module Blacklisting
+  when: hardening_fs_blacklist | bool
+  block:
+    - name: Create filesystem module blacklist configuration
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/hardening-fs.conf
+        content: |
+          install cramfs /bin/false
+          blacklist cramfs
+          install freevxfs /bin/false
+          blacklist freevxfs
+          install jffs2 /bin/false
+          blacklist jffs2
+          install hfs /bin/false
+          blacklist hfs
+          install hfsplus /bin/false
+          blacklist hfsplus
+          install squashfs /bin/false
+          blacklist squashfs
+          install udf /bin/false
+          blacklist udf
+          install usb-storage /bin/false
+          blacklist usb-storage
+          install firewire-core /bin/false
+          blacklist firewire-core
+          install afs /bin/false
+          blacklist afs
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Unload blacklisted filesystem modules if currently loaded
+      ansible.builtin.command:
+        cmd: "modprobe -r {{ item }} || rmmod {{ item }}"
+      loop:
+        - cramfs
+        - freevxfs
+        - jffs2
+        - hfs
+        - hfsplus
+        - squashfs
+        - udf
+        - usb-storage
+        - firewire-core
+        - afs
+      register: unload_result
+      failed_when: false
+      changed_when: unload_result.rc == 0
+
+- name: Secure partitions
+  when: hardening_fs_mounts | bool
+  block:
+    - name: Gather facts about mounts
+      ansible.builtin.setup:
+        gather_subset:
+          - mounts
+
+    - name: Add nodev, nosuid, noexec to /tmp
+      ansible.posix.mount:
+        path: /tmp
+        src: "{{ item.device }}"
+        fstype: "{{ item.fstype }}"
+        opts: "{{ item.options }},nodev,nosuid,noexec"
+        state: mounted
+      loop: "{{ ansible_mounts }}"
+      when: item.mount == '/tmp'
+
+    - name: Add nodev, nosuid, noexec to /var/tmp
+      ansible.posix.mount:
+        path: /var/tmp
+        src: "{{ item.device }}"
+        fstype: "{{ item.fstype }}"
+        opts: "{{ item.options }},nodev,nosuid,noexec"
+        state: mounted
+      loop: "{{ ansible_mounts }}"
+      when: item.mount == '/var/tmp'
+
+    - name: Add nodev, nosuid to /var
+      ansible.posix.mount:
+        path: /var
+        src: "{{ item.device }}"
+        fstype: "{{ item.fstype }}"
+        opts: "{{ item.options }},nodev,nosuid"
+        state: mounted
+      loop: "{{ ansible_mounts }}"
+      when: item.mount == '/var'
+
+    - name: Add nodev, nosuid, noexec to /dev/shm
+      ansible.posix.mount:
+        path: /dev/shm
+        src: "{{ item.device }}"
+        fstype: "{{ item.fstype }}"
+        opts: "{{ item.options }},nodev,nosuid,noexec"
+        state: mounted
+      loop: "{{ ansible_mounts }}"
+      when: item.mount == '/dev/shm'
+
+    - name: Add nodev, nosuid to /home
+      ansible.posix.mount:
+        path: /home
+        src: "{{ item.device }}"
+        fstype: "{{ item.fstype }}"
+        opts: "{{ item.options }},nodev,nosuid"
+        state: mounted
+      loop: "{{ ansible_mounts }}"
+      when: item.mount == '/home'
+
+    - name: Add nodev, nosuid, noexec to /var/log
+      ansible.posix.mount:
+        path: /var/log
+        src: "{{ item.device }}"
+        fstype: "{{ item.fstype }}"
+        opts: "{{ item.options }},nodev,nosuid,noexec"
+        state: mounted
+      loop: "{{ ansible_mounts }}"
+      when: item.mount == '/var/log'
+
+    - name: Add nodev, nosuid, noexec to /var/log/audit
+      ansible.posix.mount:
+        path: /var/log/audit
+        src: "{{ item.device }}"
+        fstype: "{{ item.fstype }}"
+        opts: "{{ item.options }},nodev,nosuid,noexec"
+        state: mounted
+      loop: "{{ ansible_mounts }}"
+      when: item.mount == '/var/log/audit'

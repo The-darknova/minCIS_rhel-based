@@ -1,0 +1,49 @@
+---
+# Role: access_control
+
+- name: SELinux Configuration
+  when: hardening_selinux | bool
+  block:
+    - name: Ensure SELinux is enforcing
+      ansible.builtin.lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: 'SELINUX=enforcing'
+        state: present
+
+    - name: Ensure SELinux policy is targeted
+      ansible.builtin.lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUXTYPE='
+        line: 'SELINUXTYPE=targeted'
+        state: present
+
+    - name: Remove insecure SELinux utilities (mcstrans, setroubleshoot)
+      ansible.builtin.dnf:
+        name:
+          - mcstrans
+          - setroubleshoot
+        state: absent
+
+- name: Legal Banners Configuration
+  when: hardening_legal_banners | bool
+  block:
+    - name: Configure legal banners
+      ansible.builtin.copy:
+        dest: "{{ item }}"
+        content: |
+          *******************************************************************************
+           AVERTISSEMENT: Accès autorisé uniquement.
+           Ce système est surveillé à des fins de sécurité. Tout accès ou utilisation
+           non autorisé(e) de ce système est interdit(e) et peut entraîner des sanctions
+           pénales ou civiles.
+
+           https://changeme.com
+           *******************************************************************************
+        mode: '0644'
+        owner: root
+        group: root
+      loop:
+        - /etc/motd
+        - /etc/issue
+        - /etc/issue.net
