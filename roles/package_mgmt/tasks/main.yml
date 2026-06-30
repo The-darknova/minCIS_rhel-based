@@ -35,14 +35,15 @@
 - name: Purge GUI components
   when: hardening_purge_gui | bool
   block:
-    - name: Purge GDM3 and X11
+    - name: Purge GDM and X11
       ansible.builtin.dnf:
         name:
-          - gdm3
+          - gdm
           - xserver-*
           - libx11-*
         state: absent
         autoremove: yes
+      ignore_errors: "{{ ansible_check_mode }}"
 
 - name: Purge legacy network services
   when: hardening_purge_services | bool
@@ -52,38 +53,32 @@
         name:
           - vsftpd
           - ftp
-          - tnftp
-          - tftpd-hpa
-          - nfs-kernel-server
+          - tftp-server
+          - nfs-utils
           - samba
-          - smbd
+          - samba-client
           - autofs
-          - avahi-daemon
+          - avahi
           - cups
-          - bluez
-          - slapd
-          - ldap-utils
-          - ypserv
-          - bind9
-          - bind9utils
-          - bind9-doc
+          - bluez-libs
+          - bind
+          - bind-utils
           - dnsmasq
-          - isc-dhcp-server
+          - dhcp-server
           - rpcbind
-          - dovecot-imapd
-          - dovecot-pop3d
-          - rsh-client
+          - dovecot
+          - rsh
           - talk
-          - telnet
-          - inetutils-telnet
-          - apache2
+          - telnet-server
+          - httpd
           - nginx
           - squid
-          - snmp
+          - net-snmp
           - rsync
           - xinetd
         state: absent
         autoremove: yes
+      ignore_errors: "{{ ansible_check_mode }}"
 
     - name: Check if Postfix is installed
       ansible.builtin.stat:

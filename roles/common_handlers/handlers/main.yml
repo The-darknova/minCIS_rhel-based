@@ -25,3 +25,13 @@
 
 - name: Reboot system
   ansible.builtin.reboot:
+
+- name: Restart chronyd
+  ansible.builtin.systemd:
+    name: chronyd
+    state: restarted
+
+- name: Restart postfix
+  ansible.builtin.systemd:
+    name: postfix
+    state: restarted
