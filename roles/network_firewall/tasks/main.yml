@@ -63,6 +63,8 @@
           net.ipv4.conf.default.accept_source_route = 0
           net.ipv6.conf.all.accept_source_route = 0
           net.ipv6.conf.default.accept_source_route = 0
+          net.ipv4.conf.default.log_martians = 1
+          net.ipv4.conf.all.log_martians = 1
         mode: '0644'
         owner: root
         group: root
@@ -106,13 +108,14 @@
       changed_when: "'success' in fw_ssh_result.stdout and 'ALREADY_ENABLED' not in fw_ssh_result.stderr"
       failed_when: false
 
-    - name: Allow outgoing HTTP, HTTPS, and DNS
+    - name: Allow outgoing HTTP, HTTPS, DNS, and NTP
       ansible.builtin.command: "{{ item }}"
       loop:
         - firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="80" protocol="tcp" accept'
         - firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="443" protocol="tcp" accept'
         - firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="53" protocol="tcp" accept'
         - firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="53" protocol="udp" accept'
+        - firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="123" protocol="udp" accept'
       register: fw_rich_rules_result
       changed_when: "'success' in fw_rich_rules_result.stdout and 'ALREADY_ENABLED' not in fw_rich_rules_result.stderr"
       failed_when: false

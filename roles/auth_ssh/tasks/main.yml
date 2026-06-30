@@ -135,16 +135,6 @@
         owner: root
         group: root
 
-    - name: Remove nullok from PAM common-auth and common-password (if they exist)
-      ansible.builtin.replace:
-        path: "{{ item }}"
-        regexp: '\s*nullok\s*'
-        replace: ' '
-      loop:
-        - /etc/pam.d/system-auth
-        - /etc/pam.d/password-auth
-      failed_when: false
-
     - name: Configure Password Expiration in login.defs
       ansible.builtin.lineinfile:
         path: /etc/login.defs

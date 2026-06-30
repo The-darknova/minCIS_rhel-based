@@ -91,8 +91,12 @@ cat /etc/yum.repos.d/*
 Pour éviter d'installer des paquets inutiles (surface d'attaque supplémentaire), désactivez les "Recommends" et "Suggests" d'APT.
 
 ```bash
-printf '%s\n%s\n' '[main]' 'install_weak_deps=False' | \
- sudo tee /etc/dnf/dnf.conf
+# Vérifie si la directive existe pour la modifier, sinon l'insère sous la section [main]
+if grep -q "^install_weak_deps" /etc/dnf/dnf.conf; then
+    sudo sed -i 's/^install_weak_deps=.*/install_weak_deps=False/' /etc/dnf/dnf.conf
+else
+    sudo sed -i '/^\[main\]/a install_weak_deps=False' /etc/dnf/dnf.conf
+fi
 ```
 
 ### **2.3 Sécurisation des dépôts DNF**
@@ -122,18 +126,17 @@ Une synchronisation précise de l'heure est essentielle pour la corrélation des
 **Action :** Installer et configurer Chrony.
 
 ```bash
-sudo apt update && sudo apt install -y chrony
-sudo bash -c 'cat <<EOF > /etc/chrony/chrony.conf
-pool 2.debian.pool.ntp.org iburst
-keyfile /etc/chrony/chrony.keys
-driftfile /var/lib/chrony/chrony.drift
+sudo dnf install -y chrony
+sudo bash -c 'cat <<EOF > /etc/chrony.conf
+pool pool.ntp.org iburst
+driftfile /var/lib/chrony/drift
 log tracking measurements statistics
 logdir /var/log/chrony
 maxupdateskew 100.0
 rtcsync
 makestep 1 3
 EOF'
-sudo systemctl enable --now chrony
+sudo systemctl enable --now chronyd
 ```
 
 ### **Phase 3: Contrôle d'Accès Obligatoire (SELinux)**
@@ -259,21 +262,22 @@ Déployer des règles spécifiques (CIS) pour auditd afin d'assurer une surveill
 -w /etc/localtime -p wa -k time-change
 
 ## =========================================================
-## System Locale and Network Environment
+## System Locale and Network Environment (RHEL paths)
 ## =========================================================
 -a always,exit -F arch=b64 -S sethostname,setdomainname -k system-locale
 -a always,exit -F arch=b32 -S sethostname,setdomainname -k system-locale
 -w /etc/issue -p wa -k system-locale
 -w /etc/issue.net -p wa -k system-locale
 -w /etc/hosts -p wa -k system-locale
--w /etc/network -p wa -k system-locale
--w /etc/networks -p wa -k system-locale
+-w /etc/hostname -p wa -k system-locale
+-w /etc/sysconfig/network -p wa -k system-locale
+-w /etc/sysconfig/network-scripts/ -p wa -k system-locale
 
 ## =========================================================
-## MAC Policy (AppArmor)
+## MAC Policy (SELinux - RHEL Specific)
 ## =========================================================
--w /etc/apparmor/ -p wa -k MAC-policy
--w /etc/apparmor.d/ -p wa -k MAC-policy
+-w /etc/selinux/ -p wa -k MAC-policy
+-w /usr/share/selinux/ -p wa -k MAC-policy
 
 ## =========================================================
 ## User Emulation
@@ -282,11 +286,11 @@ Déployer des règles spécifiques (CIS) pour auditd afin d'assurer une surveill
 -a always,exit -F arch=b32 -S execve -C uid!=euid -F euid=0 -k user_emulation
 
 ## =========================================================
-## Logins and Logouts
+## Logins and Logouts (faillock for RHEL 8+)
 ## =========================================================
 -w /var/log/lastlog -p wa -k logins
 -w /var/log/faillog -p wa -k logins
--w /var/log/tallylog -p wa -k logins
+-w /var/run/faillock/ -p wa -k logins
 
 ## =========================================================
 ## Session Initiation Information
@@ -346,13 +350,13 @@ Déployer des règles spécifiques (CIS) pour auditd afin d'assurer une surveill
 -a always,exit -F arch=b32 -S unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=unset -k delete
 
 ## =========================================================
-## Kernel Module Loading and Unloading
+## Kernel Module Loading and Unloading (finit_module added)
 ## =========================================================
--w /sbin/insmod -p x -k modules
--w /sbin/rmmod -p x -k modules
--w /sbin/modprobe -p x -k modules
--a always,exit -F arch=b64 -S init_module,delete_module -k modules
--a always,exit -F arch=b32 -S init_module,delete_module -k modules
+-w /usr/sbin/insmod -p x -k modules
+-w /usr/sbin/rmmod -p x -k modules
+-w /usr/sbin/modprobe -p x -k modules
+-a always,exit -F arch=b64 -S init_module,delete_module,finit_module -k modules
+-a always,exit -F arch=b32 -S init_module,delete_module,finit_module -k modules
 
 ## =========================================================
 ## Make the Audit Configuration Immutable
@@ -426,7 +430,7 @@ Un serveur sécurisé ne doit faire tourner que ce dont il a besoin.
 ### **7.1 Suppression de l'interface graphique (GDM/X11)**
 
 ```bash
-sudo dnf remove -y gdm3; sudo dnf remove 'xserver-*' 'libx11-.*'
+sudo dnf remove -y gdm; sudo dnf remove 'xserver-*' 'libx11-.*'
  sudo dnf autoremove -y
 ```
 
@@ -464,12 +468,9 @@ L'exécution des commandes de nettoyage supprimera les services listés ci-desso
 
 ```bash
 sudo dnf update -qq && \
- sudo dnf remove -y -qq \
- vsftpd ftp tnftp tftpd-hpa nfs-kernel-server samba smbd autofs \
- avahi-daemon cups bluez slapd ldap-utils ypserv bind9 bind9utils \
- bind9-doc dnsmasq isc-dhcp-server rpcbind dovecot-imapd dovecot-pop3d \
- rsh-client talk telnet inetutils-telnet apache2 nginx squid snmp \
- rsync xinetd && \
+ sudo dnf remove -y gdm tftp-server nfs-utils samba samba-client autofs \
+ avahi cups bluez-libs bind bind-utils dnsmasq dhcp-server rpcbind dovecot \
+ rsh talk telnet-server httpd nginx squid net-snmp rsync xinetd && \
  sudo dnf remove -y -qq && \
  sudo dnf clean all
 ```
@@ -566,8 +567,8 @@ sudo bash -c 'cat <<EOF >> /etc/sysctl.d/60-network-hardening.conf
  net.ipv4.conf.default.accept_source_route = 0
  net.ipv6.conf.all.accept_source_route = 0
  net.ipv6.conf.default.accept_source_route = 0
- sysctl net.ipv4.conf.default.log_martians = 1
- sysctl net.ipv4.conf.all.log_martians = 1
+ net.ipv4.conf.default.log_martians = 1
+ net.ipv4.conf.all.log_martians = 1
  EOF'
  sudo sysctl --system
 ```
@@ -589,12 +590,13 @@ sudo firewall-cmd --permanent --zone=drop --add-source=::1
 # 3. Allow incoming SSH (TCP 22) from anywhere
 sudo firewall-cmd --permanent --zone=public --add-port=22/tcp
 
-# 4. Allow outgoing HTTP (80/tcp), HTTPS (443/tcp), and DNS (53/tcp & 53/udp)
+# 4. Allow outgoing HTTP (80/tcp), HTTPS (443/tcp), DNS (53/tcp & 53/udp), and NTP (123/udp)
 # We use rich rules to explicitly permit outbound traffic since the global outbound policy is DROP
 sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="80" protocol="tcp" accept'
 sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="443" protocol="tcp" accept'
 sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="53" protocol="tcp" accept'
 sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="53" protocol="udp" accept'
+sudo firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" destination port port="123" protocol="udp" accept'
 
 # 5. Reload firewalld to apply and enforce all changes (Equivalent to ufw enable)
 sudo systemctl enable --now firewalld
@@ -656,7 +658,7 @@ sudo bash -c 'cat <<EOF > /etc/sudoers.d/00-cis-hardening
 
 ### **10.3 Politique des Mots de Passe (PAM)**
 
-La gestion d'identité PAM (Pluggable Authentication Modules) sous Red Hat est pilotée par l'utilitaire authselect.1 Toute modification manuelle des fichiers /etc/pam.d/system-auth ou /etc/pam.d/password-auth est écrasée lors des mises à jour ; par conséquent, l'usage de commandes authselect est obligatoire.1
+La gestion d'identité PAM (Pluggable Authentication Modules) sous Red Hat est pilotée par l'utilitaire authselect. Toute modification manuelle des fichiers /etc/pam.d/system-auth ou /etc/pam.d/password-auth est écrasée lors des mises à jour ; par conséquent, l'usage de commandes authselect est obligatoire.
 
 Le durcissement de l'authentification couvre plusieurs aspects impératifs 1 :
 
@@ -734,8 +736,7 @@ sudo chmod 0600 /etc/security/opasswd
 
 **Actions complémentaires :**
 
-1. Supprimez toute mention nullok dans les fichiers /etc/pam.d/common-auth et /etc/pam.d/common-password.
-2. Éditez /etc/login.defs pour configurer l'expiration :
+Éditez /etc/login.defs pour configurer l'expiration :
 
 ```jsx
 PASS_MAX_DAYS 90
@@ -755,7 +756,7 @@ awk -F: '$3 == 0 {print $1}' /etc/passwd
 - S'assurer que les comptes systèmes n'ont pas de shell valide: Le resultat devrait contenir “root” et possiblement “sync” qui a pour shell /bin/sync
 
 ```bash
-awk -F: '$3 < 1000 && $7 != "/usr/sbin/nologin" && $7 != "/bin/false" {print $1}' /etc/passwd
+awk -F: '$3 < 1000 && $7 != "/sbin/nologin" && $7 != "/bin/false" {print $1}' /etc/passwd
 ```
 
 ### **10.5 Sécurité des profils utilisateurs (TMOUT et umask)**

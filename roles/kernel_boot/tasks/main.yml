@@ -86,62 +86,8 @@
 
     - name: Deploy CIS auditd rules
       ansible.builtin.copy:
+        src: 60-cis-auditd.rules
         dest: /etc/audit/rules.d/60-cis-auditd.rules
-        content: |
-          ## =========================================================
-          ## CIS RHEL Benchmark - Auditd Rules
-          ## =========================================================
-          -D
-          -b 8192
-          -f 1
-          -a always,exit -F arch=b64 -S adjtimex,settimeofday,clock_settime -k time-change
-          -a always,exit -F arch=b32 -S adjtimex,settimeofday,clock_settime -k time-change
-          -w /etc/localtime -p wa -k time-change
-          -a always,exit -F arch=b64 -S sethostname,setdomainname -k system-locale
-          -a always,exit -F arch=b32 -S sethostname,setdomainname -k system-locale
-          -w /etc/issue -p wa -k system-locale
-          -w /etc/issue.net -p wa -k system-locale
-          -w /etc/hosts -p wa -k system-locale
-          -w /etc/network -p wa -k system-locale
-          -w /etc/networks -p wa -k system-locale
-          -w /etc/apparmor/ -p wa -k MAC-policy
-          -w /etc/apparmor.d/ -p wa -k MAC-policy
-          -a always,exit -F arch=b64 -S execve -C uid!=euid -F euid=0 -k user_emulation
-          -a always,exit -F arch=b32 -S execve -C uid!=euid -F euid=0 -k user_emulation
-          -w /var/log/lastlog -p wa -k logins
-          -w /var/log/faillog -p wa -k logins
-          -w /var/log/tallylog -p wa -k logins
-          -w /var/run/utmp -p wa -k session
-          -w /var/log/wtmp -p wa -k session
-          -w /var/log/btmp -p wa -k session
-          -w /etc/group -p wa -k identity
-          -w /etc/passwd -p wa -k identity
-          -w /etc/gshadow -p wa -k identity
-          -w /etc/shadow -p wa -k identity
-          -w /etc/security/opasswd -p wa -k identity
-          -w /etc/sudoers -p wa -k scope
-          -w /etc/sudoers.d/ -p wa -k scope
-          -w /var/log/sudo.log -p wa -k actions
-          -a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=unset -k perm_mod
-          -a always,exit -F arch=b32 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=unset -k perm_mod
-          -a always,exit -F arch=b64 -S chown,fchown,fchownat,lchown -F auid>=1000 -F auid!=unset -k perm_mod
-          -a always,exit -F arch=b32 -S chown,fchown,fchownat,lchown -F auid>=1000 -F auid!=unset -k perm_mod
-          -a always,exit -F arch=b64 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=unset -k perm_mod
-          -a always,exit -F arch=b32 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=unset -k perm_mod
-          -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
-          -a always,exit -F arch=b32 -S creat,open,openat,truncate,ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
-          -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -k access
-          -a always,exit -F arch=b32 -S creat,open,openat,truncate,ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -k access
-          -a always,exit -F arch=b64 -S mount -F auid>=1000 -F auid!=unset -k mounts
-          -a always,exit -F arch=b32 -S mount -F auid>=1000 -F auid!=unset -k mounts
-          -a always,exit -F arch=b64 -S unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=unset -k delete
-          -a always,exit -F arch=b32 -S unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=unset -k delete
-          -w /sbin/insmod -p x -k modules
-          -w /sbin/rmmod -p x -k modules
-          -w /sbin/modprobe -p x -k modules
-          -a always,exit -F arch=b64 -S init_module,delete_module -k modules
-          -a always,exit -F arch=b32 -S init_module,delete_module -k modules
-          -e 2
         mode: '0640'
         owner: root
         group: root
@@ -177,12 +123,8 @@
         
     - name: Deploy Journald config
       ansible.builtin.copy:
+        src: 60-cis-journald.conf
         dest: /etc/systemd/journald.conf.d/60-cis-journald.conf
-        content: |
-          [Journal]
-          Compress=yes
-          Storage=persistent
-          ForwardToSyslog=no
         mode: '0644'
         owner: root
         group: root
